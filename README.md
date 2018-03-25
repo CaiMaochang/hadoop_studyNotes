@@ -1,1 +1,1 @@
-# hadoop_studyNotes
+# Hadoop学习笔记与项目源代码
