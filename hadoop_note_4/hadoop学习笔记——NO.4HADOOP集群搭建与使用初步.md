@@ -8,10 +8,10 @@ YARN集群：负责海量数据运算时的资源调度，集群中的角色主�
 本集群搭建案例，以5节点为例进行搭建，角色分配如下：
 
 >hdp-node-01   NameNode   SecondaryNameNode  
-  hdp-node-02   ResourceManager | |
-  hdp-node-03   DataNode   NodeManager  
-  hdp-node-04   DataNode   NodeManager  
-  hdp-node-05   DataNode   NodeManager  
+ hdp-node-02   ResourceManager
+ hdp-node-03   DataNode   NodeManager  
+ hdp-node-04   DataNode   NodeManager  
+ hdp-node-05   DataNode   NodeManager  
 
 部署图如下：
 
