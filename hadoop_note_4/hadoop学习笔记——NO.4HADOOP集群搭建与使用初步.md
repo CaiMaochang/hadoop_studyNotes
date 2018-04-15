@@ -6,14 +6,15 @@
 YARN集群：负责海量数据运算时的资源调度，集群中的角色主要有ResourceManager /NodeManager
 
 本集群搭建案例，以5节点为例进行搭建，角色分配如下：
-|节点|角色1|角色2|
-| :----:  |  :----: | :----: |
-|hdp-node-01|NameNode|SecondaryNameNode|
-|hdp-node-02|ResourceManager
-|hdp-node-03|DataNode|NodeManager|
-|hdp-node-04|DataNode|NodeManager|
-|hdp-node-05|DataNode|NodeManager|
+
+>hdp-node-01   NameNode   SecondaryNameNode  
+  hdp-node-02   ResourceManager | |
+  hdp-node-03   DataNode   NodeManager  
+  hdp-node-04   DataNode   NodeManager  
+  hdp-node-05   DataNode   NodeManager  
+
 部署图如下：
+
 ![这里写图片描述](https://img-blog.csdn.net/20180415235843551?watermark/2/text/aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3UwMTQxNDI4NzQ=/font/5a6L5L2T/fontsize/400/fill/I0JBQkFCMA==/dissolve/70)
 
 ### 服务器准备
@@ -168,7 +169,9 @@ hadoop jar mapredcue-example-2.6.1.jar wordcount /wordcount/input  /wordcount/ou
 hdfs  dfsadmin  –report 
 ```
 ![这里写图片描述](https://img-blog.csdn.net/20180415235926404?watermark/2/text/aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3UwMTQxNDI4NzQ=/font/5a6L5L2T/fontsize/400/fill/I0JBQkFCMA==/dissolve/70)
+
 可以看出，集群共有3个datanode可用,也可打开web控制台查看HDFS集群信息，在浏览器打开http://hdp-node-01:50070/
+
 ![这里写图片描述](https://img-blog.csdn.net/20180416000025106?watermark/2/text/aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3UwMTQxNDI4NzQ=/font/5a6L5L2T/fontsize/400/fill/I0JBQkFCMA==/dissolve/70)
 
 2. 上传文件到HDFS
@@ -177,11 +180,13 @@ hdfs  dfsadmin  –report
 hadoop  fs  –ls  /
 ```
 ![这里写图片描述](https://img-blog.csdn.net/20180416000047722?watermark/2/text/aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3UwMTQxNDI4NzQ=/font/5a6L5L2T/fontsize/400/fill/I0JBQkFCMA==/dissolve/70)
+
 3. 上传文件
 ```
 hadoop  fs  -put  ./ scala-2.10.6.tgz  to  /
 ```
 ![这里写图片描述](https://img-blog.csdn.net/20180416000106866?watermark/2/text/aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3UwMTQxNDI4NzQ=/font/5a6L5L2T/fontsize/400/fill/I0JBQkFCMA==/dissolve/70)
+
 4. 从HDFS下载文件
 ```
 hadoop  fs  -get  /yarn-site.xml
