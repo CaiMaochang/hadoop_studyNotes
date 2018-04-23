@@ -1,5 +1,5 @@
-# HADOOP集群搭建与使用初步
-## HADOOP集群搭建 
+# Hadoop集群搭建与使用初步
+## Hadoop集群搭建 
 ### 集群简介
     HADOOP集群具体来说包含两个集群：HDFS集群和YARN集群，两者逻辑上分离，但物理上常在一起
 >HDFS集群：负责海量数据的存储，集群中的角色主要有 NameNode / DataNode
