@@ -144,7 +144,7 @@ hostname hadoop
 ```
 #### 修改主机名(重启后永久生效)
 ```
-vi /ect/sysconfig/network
+vi /etc/sysconfig/network
 ```
 #### 修改IP(重启后无效)
 ```
