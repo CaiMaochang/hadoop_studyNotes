@@ -148,7 +148,7 @@ vi /etc/sysconfig/network
 ```
 #### 修改IP(重启后无效)
 ```
-ifconfig eth0 192.168.12.22
+ifconfig eth0 192.168.12.21
 ```
 #### 修改IP(重启后永久生效)
 ```
