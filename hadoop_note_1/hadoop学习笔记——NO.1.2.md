@@ -73,10 +73,19 @@ sudo chown -R root:root /var/lib/mysql
 ```
 $ service mysqld restart
 ```
-### 6.接下来登录重置密码：
+### 6.接下来登录重置密码
 ```
 mysql -u root  #直接回车进入mysql控制台
 mysql > use mysql;
 mysql > update user set password=password('root') where user='root';
 mysql > exit;
 ```
+
+### 7.centOS 7下防火墙设置
+
+```
+firewall-cmd --state #查看防火墙状态
+systemctl stop firewalld.service #停止firewall
+systemctl disable firewalld.service  #禁止firewall开机启动
+```
+
