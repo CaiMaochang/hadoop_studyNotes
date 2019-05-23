@@ -89,3 +89,22 @@ systemctl stop firewalld.service #停止firewall
 systemctl disable firewalld.service  #禁止firewall开机启动
 ```
 
+### 8.配置静态IP地址
+
+```
+vi /etc/sysconfig/network-scripts/ifcfg-ens32    #最后一个为网卡名称
+
+#修改以下两个参数
+bootproto=static
+onboot=yes
+
+#在最后加上几行，IP地址、子网掩码、网关、dns服务器
+IPADDR=192.168.1.xxx
+NETMASK=255.255.255.0
+GATEWAY=192.168.1.1
+DNS1=xxx.xxx.xxx.xxx
+
+#完成以上配置之后，重启网络服务即可
+systemctl restart network
+```
+
