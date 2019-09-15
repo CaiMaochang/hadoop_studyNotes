@@ -1,3 +1,7 @@
+---
+
+---
+
 ﻿# hadoop学习笔记——NO.6_MapReduce_1
 
 ## 1.MapReduce原理篇（1）
@@ -249,15 +253,858 @@ mapreduce程序在集群中运行时的大体流程：
 附：在windows平台上访问hadoop时改变自身身份标识的方法之二：
 ![这里写图片描述](https://img-blog.csdn.net/20180519223235334?watermark/2/text/aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3UwMTQxNDI4NzQ=/font/5a6L5L2T/fontsize/400/fill/I0JBQkFCMA==/dissolve/70)
 
-## 3. MAPREDUCE中的Combiner
+### 3. MAPREDUCE中的Combiner
+
 >（1）combiner是MR程序中Mapper和Reducer之外的一种组件
-（2）combiner组件的父类就是Reducer
-（3）combiner和reducer的区别在于运行的位置：
-Combiner是在每一个maptask所在的节点运行
-Reducer是接收全局所有Mapper的输出结果；
-（4） combiner的意义就是对每一个maptask的输出进行局部汇总，以减小网络传输量
-具体实现步骤：
-1、自定义一个combiner继承Reducer，重写reduce方法
-2、在job中设置：  job.setCombinerClass(CustomCombiner.class)
-（5） combiner能够应用的前提是不能影响最终的业务逻辑
-而且，combiner的输出kv应该跟reducer的输入kv类型要对应起来
+>（2）combiner组件的父类就是Reducer
+>（3）combiner和reducer的区别在于运行的位置：
+>Combiner是在每一个maptask所在的节点运行
+>Reducer是接收全局所有Mapper的输出结果；
+>（4） combiner的意义就是对每一个maptask的输出进行局部汇总，以减小网络传输量
+>具体实现步骤：
+>1、自定义一个combiner继承Reducer，重写reduce方法
+>2、在job中设置：  job.setCombinerClass(CustomCombiner.class)
+>（5） combiner能够应用的前提是不能影响最终的业务逻辑
+>而且，combiner的输出kv应该跟reducer的输入kv类型要对应起来
+
+
+
+## 3.MapReduce原理篇（2）
+
+### 3.1 mapreduce的shuffle机制
+
+#### 3.1.1 概述
+
+> 1. v mapreduce中，map阶段处理的数据如何传递给reduce阶段，是mapreduce框架中最关键的一个流程，这个流程就叫shuffle；
+> 2. shuffle: 洗牌、发牌——（核心机制：数据分区，排序，缓存）；
+> 3. v 具体来说：就是将maptask输出的处理结果数据，分发给reducetask，并在分发的过程中，对数据按key进行了分区和排序；
+
+#### 3.1.2 主要流程
+
+![Shuffle](img/Shuffle.png)
+
+shuffle是MR处理流程中的一个过程，它的每一个处理步骤是分散在各个map task和reduce task节点上完成的，整体来看，分为3个操作：
+
+> 1. 分区partition
+> 2. Sort根据key排序
+> 3. Combiner进行局部value的合并
+
+#### 3.1.3 详细流程
+
+> 1. maptask收集我们的map()方法输出的kv对，放到内存缓冲区中
+>
+> 2. 从内存缓冲区不断溢出本地磁盘文件，可能会溢出多个文件
+>
+> 3. 多个溢出文件会被合并成大的溢出文件
+>
+> 4. 在溢出过程中，及合并的过程中，都要调用partitoner进行分组和针对key进行排序
+>
+> 5. reducetask根据自己的分区号，去各个maptask机器上取相应的结果分区数据
+>
+> 6. reducetask会取到同一个分区的来自不同maptask的结果文件，reducetask会将这些文件再进行合并（归并排序）
+>
+> 7. 合并成大文件后，shuffle的过程也就结束了，后面进入reducetask的逻辑运算过程（从文件中取出一个一个的键值对group，调用用户自定义的reduce()方法）
+
+Shuffle中的缓冲区大小会影响到mapreduce程序的执行效率，原则上说，缓冲区越大，磁盘io的次数越少，执行速度就越快，缓冲区的大小可以通过参数调整,  参数：io.sort.mb  默认100M
+
+### 3.2. MAPREDUCE中的序列化
+
+#### 3.2.1 概述
+
+>  Java的序列化是一个重量级序列化框架（Serializable），一个对象被序列化后，会附带很多额外的信息（各种校验信息，header，继承体系等等），不便于在网络中高效传输，所以，hadoop自己开发了一套序列化机制（Writable），精简，高效。
+
+#### 3.2.2 JDK序列化和MR序列化之间的比较
+
+```java
+/**
+*简单代码验证两种序列化的差别
+*/
+public class TestSerializable{
+	public static void main(String[] args) throws Exception {
+		//定义两个ByteArrayOutputStream，用来接收不同序列化机制的序列化结果
+		ByteArrayOutputStream ba = new ByteArrayOutputStream();
+		ByteArrayOutputStream ba2 = new ByteArrayOutputStream();
+
+		//定义两个DataOutputStream，用于将普通对象进行jdk标准序列化
+		DataOutputStream dout = new DataOutputStream(ba);
+		DataOutputStream dout2 = new DataOutputStream(ba2);
+		ObjectOutputStream obout = new ObjectOutputStream(dout2);
+		//定义两个bean，作为序列化的源对象
+		ItemBeanSer itemBeanSer = new ItemBeanSer(1000L, 89.9f);
+		ItemBean itemBean = new ItemBean(1000L, 89.9f);
+
+		//用于比较String类型和Text类型的序列化差别
+		Text atext = new Text("a");
+		// atext.write(dout);
+		itemBean.write(dout);
+
+		byte[] byteArray = ba.toByteArray();
+
+		//比较序列化结果
+		System.out.println(byteArray.length);
+		for (byte b : byteArray) {
+			System.out.print(b);
+			System.out.print(":");
+		}
+
+		System.out.println("-----------------------");
+
+		String astr = "a";
+		// dout2.writeUTF(astr);
+		obout.writeObject(itemBeanSer);
+
+		byte[] byteArray2 = ba2.toByteArray();
+		System.out.println(byteArray2.length);
+		for (byte b : byteArray2) {
+			System.out.print(b);
+			System.out.print(":");
+		}
+	}
+}
+```
+
+#### 3.2.3 自定义对象实现MR中的序列化接口
+
+如果需要将自定义的bean放在key中传输，则还需要实现comparable接口，因为mapreduce框中的shuffle过程一定会对key进行排序,此时，自定义的bean实现的接口应该是： WritableComparable，需要自己实现的方法是：
+
+```java
+/**
+	 * 反序列化的方法，反序列化时，从流中读取到的各个字段的顺序应该与序列化时写出去的顺序保持一致
+	 */
+	@Override
+	public void readFields(DataInput in) throws IOException {
+		
+		upflow = in.readLong();
+		dflow = in.readLong();
+		sumflow = in.readLong();
+		
+
+	}
+
+	/**
+	 * 序列化的方法
+	 */
+	@Override
+	public void write(DataOutput out) throws IOException {
+
+		out.writeLong(upflow);
+		out.writeLong(dflow);
+		//可以考虑不序列化总流量，因为总流量是可以通过上行流量和下行流量计算出来的
+		out.writeLong(sumflow);
+
+	}
+	
+	@Override
+	public int compareTo(FlowBean o) {
+		
+		//实现按照sumflow的大小倒序排序
+		return sumflow>o.getSumflow()?-1:1;
+	}
+```
+
+### 3.3 MapReduce与YARN
+
+#### 3.3.1 YARN概述
+
+>  Yarn是一个资源调度平台，负责为运算程序提供服务器运算资源，相当于一个分布式的操作系统平台，而mapreduce等运算程序则相当于运行于操作系统之上的应用程序。
+
+#### 3.3.2 YARN的重要概念
+
+> 1. yarn并不清楚用户提交的程序的运行机制
+>
+> 2. yarn只提供运算资源的调度（用户程序向yarn申请资源，yarn就负责分配资源）
+>
+> 3. yarn中的主管角色叫ResourceManager
+>
+> 4. yarn中具体提供运算资源的角色叫NodeManager
+>
+> 5. 这样一来，yarn其实就与运行的用户程序完全解耦，就意味着yarn上可以运行各种类型的分布式运算程序（mapreduce只是其中的一种），比如mapreduce、storm程序，spark程序等等 ……
+>
+> 6. 所以，spark、storm等运算框架都可以整合在yarn上运行，只要他们各自的框架中有符合yarn规范的资源请求机制即可
+>
+> 7. Yarn就成为一个通用的资源调度平台，从此，企业中以前存在的各种运算集群都可以整合在一个物理集群上，提高资源利用率，方便数据共享
+
+## 4. MAPREDUCE实践篇（2）
+
+### 4.1 Mapreduce中的排序初步
+
+#### 4.1.1 需求
+
+对日志数据中的上下行流量信息汇总，并输出按照总流量倒序排序的结果
+
+数据如下：
+
+>  1363157985066 	13726230503	00-FD-07-A4-72-B8:CMCC	120.196.100.82             24	27	2481	24681	200
+
+>  1363157995052 	13826544101	5C-0E-8B-C7-F1-E0:CMCC	120.197.40.4			4	0	264	0	200
+
+>  1363157991076 	13926435656	20-10-7A-28-CC-0A:CMCC	120.196.100.99			2	4	132	1512	200
+
+>  1363154400022 	13926251106	5C-0E-8B-8B-B1-50:CMCC	120.197.40.4			4	0	240	0	200
+
+####  4.1.2 分析
+
+>  基本思路：实现自定义的bean来封装流量信息，并将bean作为map输出的key来传输，MR程序在处理数据的过程中会对数据排序(map输出的kv对传输到reduce之前，会排序)，排序的依据是map输出的key所以，我们如果要实现自己需要的排序规则，则可以考虑将排序因素放到key中，让key实现接口：WritableComparable然后重写key的compareTo方法
+
+#### 4.1.3 实现
+
+```java
+/**
+*自定义的bean
+*/
+public class FlowBean implements WritableComparable<FlowBean>{
+	
+	private long upflow;
+	private long downflow;
+	private long sumflow;
+	
+	//如果空参构造函数被覆盖，一定要显示定义一下，否则在反序列时会抛异常
+	public FlowBean(){}
+	
+	public FlowBean(long upflow, long downflow) {
+		super();
+		this.upflow = upflow;
+		this.downflow = downflow;
+		this.sumflow = upflow + downflow;
+	}
+	
+	public long getSumflow() {
+		return sumflow;
+	}
+
+	public void setSumflow(long sumflow) {
+		this.sumflow = sumflow;
+	}
+
+	public long getUpflow() {
+		return upflow;
+	}
+	public void setUpflow(long upflow) {
+		this.upflow = upflow;
+	}
+	public long getDownflow() {
+		return downflow;
+	}
+	public void setDownflow(long downflow) {
+		this.downflow = downflow;
+	}
+
+	//序列化，将对象的字段信息写入输出流
+	@Override
+	public void write(DataOutput out) throws IOException {
+		out.writeLong(upflow);
+		out.writeLong(downflow);
+		out.writeLong(sumflow);
+	}
+
+	//反序列化，从输入流中读取各个字段信息
+	@Override
+	public void readFields(DataInput in) throws IOException {
+		upflow = in.readLong();
+		downflow = in.readLong();
+		sumflow = in.readLong();
+	}
+	
+	
+	@Override
+	public String toString() {
+		return upflow + "\t" + downflow + "\t" + sumflow;
+	}
+	@Override
+	public int compareTo(FlowBean o) {
+		//自定义倒序比较规则
+		return sumflow > o.getSumflow() ? -1:1;
+	}
+}
+```
+
+```java
+/**
+*mapper和reducer
+*/
+public class FlowCount {
+
+	static class FlowCountMapper extends Mapper<LongWritable, Text, FlowBean,Text > {
+
+		@Override
+		protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+
+			String line = value.toString();
+			String[] fields = line.split("\t");
+			try {
+				String phonenbr = fields[0];
+
+				long upflow = Long.parseLong(fields[1]);
+				long dflow = Long.parseLong(fields[2]);
+
+				FlowBean flowBean = new FlowBean(upflow, dflow);
+
+				context.write(flowBean,new Text(phonenbr));
+			} catch (Exception e) {
+
+				e.printStackTrace();
+			}
+
+		}
+
+	}
+
+	static class FlowCountReducer extends Reducer<FlowBean,Text,Text, FlowBean> {
+
+		@Override
+		protected void reduce(FlowBean bean, Iterable<Text> phonenbr, Context context) throws IOException, InterruptedException {
+
+			Text phoneNbr = phonenbr.iterator().next();
+
+			context.write(phoneNbr, bean);
+
+		}
+
+	}
+
+	public static void main(String[] args) throws Exception {
+
+		Configuration conf = new Configuration();
+
+		Job job = Job.getInstance(conf);
+
+		job.setJarByClass(FlowCount.class);
+
+		job.setMapperClass(FlowCountMapper.class);
+		job.setReducerClass(FlowCountReducer.class);
+
+		 job.setMapOutputKeyClass(FlowBean.class);
+		 job.setMapOutputValueClass(Text.class);
+
+		job.setOutputKeyClass(Text.class);
+		job.setOutputValueClass(FlowBean.class);
+
+		// job.setInputFormatClass(TextInputFormat.class);
+
+		FileInputFormat.setInputPaths(job, new Path(args[0]));
+		FileOutputFormat.setOutputPath(job, new Path(args[1]));
+
+		job.waitForCompletion(true);
+
+	}
+
+}
+```
+
+### 4.2 Mapreduce中的分区Partitioner
+
+#### 4.2.1 需求
+
+根据归属地输出流量统计数据结果到不同文件，以便于在查询统计结果时可以定位到省级范围进行
+
+#### 4.2.2 分析
+
+Mapreduce中会将map输出的key-value对，按照相同key分组，然后分发给不同的reducetask，默认的分发规则为：根据key的hashcode%reducetask数来分发，所以：如果要按照我们自己的需求进行分组，则需要改写数据分发(分组)组件Partitioner，自定义一个CustomPartitioner继承抽象类：Partitioner，然后在job对象中，设置自定义partitioner： job.setPartitionerClass(CustomPartitioner.class)
+
+#### 4.2.3 实现
+
+```java
+/**
+ * 定义自己的从map到reduce之间的数据（分组）分发规则 按照手机号所属的省份来分发（分组）ProvincePartitioner
+ * 默认的分组组件是HashPartitioner
+ */
+public class ProvincePartitioner extends Partitioner<Text, FlowBean> {
+
+	static HashMap<String, Integer> provinceMap = new HashMap<String, Integer>();
+
+	static {
+		provinceMap.put("135", 0);
+		provinceMap.put("136", 1);
+		provinceMap.put("137", 2);
+		provinceMap.put("138", 3);
+		provinceMap.put("139", 4);
+	}
+
+	@Override
+	public int getPartition(Text key, FlowBean value, int numPartitions) {
+		Integer code = provinceMap.get(key.toString().substring(0, 3));
+		return code == null ? 5 : code;
+	}
+
+}
+```
+
+### 4.3 mapreduce数据压缩
+
+#### 4.3.1概述
+
+>这是mapreduce的一种优化策略：通过压缩编码对mapper或者reducer的输出进行压缩，以减少磁盘IO，提高MR程序运行速度（但相应增加了cpu运算负担）
+>
+>1. Mapreduce支持将map输出的结果或者reduce输出的结果进行压缩，以减少网络IO或最终输出数据的体积
+>2. 压缩特性运用得当能提高性能，但运用不当也可能降低性能
+>3. 基本原则：运算密集型的job，少用压缩；IO密集型的job，多用压缩
+
+#### 4.3.2 MR支持的压缩编码
+
+![mr支持的压缩编码](img/compCode.png)
+
+#### 4.3.3 Reducer输出压缩
+
+在配置参数或在代码中都可以设置reduce的输出压缩
+
+1. 在配置参数中设置 
+
+   ```
+   mapreduce.output.fileoutputformat.compress=false
+   mapreduce.output.fileoutputformat.compress.codec=org.apache.hadoop.io.compress.DefaultCodec
+   mapreduce.output.fileoutputformat.compress.type=RECORD
+   ```
+
+2. 在代码中配置
+
+   ```java
+   Job job = Job.getInstance(conf);
+   		FileOutputFormat.setCompressOutput(job, true);
+   		FileOutputFormat.setOutputCompressorClass(job, (Class<? extends CompressionCodec>) Class.forName(""));
+   ```
+
+#### 4.3.4 Mapper输出压缩
+
+在配置参数或在代码中都可以设置reduce的输出压缩
+
+1. 在配置参数中设置
+
+   ```
+   mapreduce.map.output.compress=false
+   mapreduce.map.output.compress.codec=org.apache.hadoop.io.compress.DefaultCodec
+   ```
+
+2. 在代码中设置
+
+   ```java
+   conf.setBoolean(Job.MAP_OUTPUT_COMPRESS, true);
+   conf.setClass(Job.MAP_OUTPUT_COMPRESS_CODEC, GzipCodec.class, CompressionCodec.class);
+   ```
+
+#### 4.3.5 压缩文件的读取
+
+Hadoop自带的InputFormat类内置支持压缩文件的读取，比如TextInputformat类，在其initialize方法中：
+
+```java
+public void initialize(InputSplit genericSplit,
+                         TaskAttemptContext context) throws IOException {
+    FileSplit split = (FileSplit) genericSplit;
+    Configuration job = context.getConfiguration();
+    this.maxLineLength = job.getInt(MAX_LINE_LENGTH, Integer.MAX_VALUE);
+    start = split.getStart();
+    end = start + split.getLength();
+    final Path file = split.getPath();
+
+    // open the file and seek to the start of the split
+    final FileSystem fs = file.getFileSystem(job);
+    fileIn = fs.open(file);
+    //根据文件后缀名创建相应压缩编码的codec
+    CompressionCodec codec = new CompressionCodecFactory(job).getCodec(file);
+    if (null!=codec) {
+      isCompressedInput = true;	
+      decompressor = CodecPool.getDecompressor(codec);
+	  //判断是否属于可切片压缩编码类型
+      if (codec instanceof SplittableCompressionCodec) {
+        final SplitCompressionInputStream cIn =
+          ((SplittableCompressionCodec)codec).createInputStream(
+            fileIn, decompressor, start, end,
+            SplittableCompressionCodec.READ_MODE.BYBLOCK);
+		 //如果是可切片压缩编码，则创建一个CompressedSplitLineReader读取压缩数据
+        in = new CompressedSplitLineReader(cIn, job,
+            this.recordDelimiterBytes);
+        start = cIn.getAdjustedStart();
+        end = cIn.getAdjustedEnd();
+        filePosition = cIn;
+      } else {
+		//如果是不可切片压缩编码，则创建一个SplitLineReader读取压缩数据，并将文件输入流转换成解压数据流传递给普通SplitLineReader读取
+        in = new SplitLineReader(codec.createInputStream(fileIn,
+            decompressor), job, this.recordDelimiterBytes);
+        filePosition = fileIn;
+      }
+    } else {
+      fileIn.seek(start);
+	   //如果不是压缩文件，则创建普通SplitLineReader读取数据
+      in = new SplitLineReader(fileIn, job, this.recordDelimiterBytes);
+      filePosition = fileIn;
+    }
+}
+```
+
+### 4.4 MapReduce编程案例
+
+#### 4.4.1 reduce端join算法实现
+
+1. 需求：
+
+订单数据表t_order：
+
+| id   | date     | pid   | amount |
+| ---- | -------- | ----- | ------ |
+| 1001 | 20150710 | P0001 | 2      |
+| 1002 | 20150710 | P0001 | 3      |
+| 1002 | 20150710 | P0002 | 3      |
+
+商品信息表t_product：
+
+| id    | name   | category_id | price |
+| ----- | ------ | ----------- | ----- |
+| P0001 | 小米5  | C01         | 2     |
+| P0002 | 锤子T1 | C01         | 3     |
+
+假如数据量巨大，两表的数据是以文件的形式存储在HDFS中，需要用mapreduce程序来实现一下SQL查询运算：
+
+```sql
+SELECT a.id,a.date,b.name,b.category_id,b.price FROM t_order a JOIN t_product b ON a.pid = b.id 
+```
+
+2. 实现机制
+
+通过将关联的条件作为map输出的key，将两表满足join条件的数据并携带数据所来源的文件信息，发往同一个reduce task，在reduce中进行数据的串联
+
+```java
+public class OrderJoin {
+
+	static class OrderJoinMapper extends Mapper<LongWritable, Text, Text, OrderJoinBean> {
+
+		@Override
+		protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+
+			// 拿到一行数据，并且要分辨出这行数据所属的文件
+			String line = value.toString();
+
+			String[] fields = line.split("\t");
+
+			// 拿到itemid
+			String itemid = fields[0];
+
+			// 获取到这一行所在的文件名（通过inpusplit）
+			String name = "你拿到的文件名";
+
+			// 根据文件名，切分出各字段（如果是a，切分出两个字段，如果是b，切分出3个字段）
+
+			OrderJoinBean bean = new OrderJoinBean();
+			bean.set(null, null, null, null, null);
+			context.write(new Text(itemid), bean);
+
+		}
+
+	}
+
+	static class OrderJoinReducer extends Reducer<Text, OrderJoinBean, OrderJoinBean, NullWritable> {
+
+		@Override
+		protected void reduce(Text key, Iterable<OrderJoinBean> beans, Context context) throws IOException, InterruptedException {
+			
+			 //拿到的key是某一个itemid,比如1000
+			//拿到的beans是来自于两类文件的bean
+			//  {1000,amount} {1000,amount} {1000,amount}   ---   {1000,price,name}
+			
+			//将来自于b文件的bean里面的字段，跟来自于a的所有bean进行字段拼接并输出
+		}
+	}
+}
+```
+
+> 缺点：这种方式中，join的操作是在reduce阶段完成，reduce端的处理压力太大，map节点的运算负载则很低，资源利用率不高，且在reduce阶段极易产生数据倾斜
+
+> 解决方案： map端join实现方式
+
+#### 4.4.2 map端join算法实现
+
+1. 原理阐述
+
+> 适用于关联表中有小表的情形，可以将小表分发到所有的map节点，这样，map节点就可以在本地对自己所读到的大表数据进行join并输出最终结果，可以大大提高join操作的并发度，加快处理速度
+
+2. 实现示例
+
+> 先在mapper类中预先定义好小表，进行join
+>
+> 引入实际场景中的解决方案：一次加载数据库或者用distributedcache
+
+```java
+public class TestDistributedCache {
+	static class TestDistributedCacheMapper extends Mapper<LongWritable, Text, Text, Text>{
+		FileReader in = null;
+		BufferedReader reader = null;
+		HashMap<String,String> b_tab = new HashMap<String, String>();
+		String localpath =null;
+		String uirpath = null;
+		
+		//是在map任务初始化的时候调用一次
+		@Override
+		protected void setup(Context context) throws IOException, InterruptedException {
+			//通过这几句代码可以获取到cache file的本地绝对路径，测试验证用
+			Path[] files = context.getLocalCacheFiles();
+			localpath = files[0].toString();
+			URI[] cacheFiles = context.getCacheFiles();
+			
+			
+			//缓存文件的用法——直接用本地IO来读取
+			//这里读的数据是map task所在机器本地工作目录中的一个小文件
+			in = new FileReader("b.txt");
+			reader =new BufferedReader(in);
+			String line =null;
+			while(null!=(line=reader.readLine())){
+				
+				String[] fields = line.split(",");
+				b_tab.put(fields[0],fields[1]);
+				
+			}
+			IOUtils.closeStream(reader);
+			IOUtils.closeStream(in);
+			
+		}
+		
+		@Override
+		protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+
+			//这里读的是这个map task所负责的那一个切片数据（在hdfs上）
+			 String[] fields = value.toString().split("\t");
+			 
+			 String a_itemid = fields[0];
+			 String a_amount = fields[1];
+			 
+			 String b_name = b_tab.get(a_itemid);
+			 
+			 // 输出结果  1001	98.9	banan
+			 context.write(new Text(a_itemid), new Text(a_amount + "\t" + ":" + localpath + "\t" +b_name ));
+			 
+		}
+		
+		
+	}
+	
+	
+	public static void main(String[] args) throws Exception {
+		
+		Configuration conf = new Configuration();
+		Job job = Job.getInstance(conf);
+		
+		job.setJarByClass(TestDistributedCache.class);
+		
+		job.setMapperClass(TestDistributedCacheMapper.class);
+		
+		job.setOutputKeyClass(Text.class);
+		job.setOutputValueClass(LongWritable.class);
+		
+		//这里是我们正常的需要处理的数据所在路径
+		FileInputFormat.setInputPaths(job, new Path(args[0]));
+		FileOutputFormat.setOutputPath(job, new Path(args[1]));
+		
+		//不需要reducer
+		job.setNumReduceTasks(0);
+		//分发一个文件到task进程的工作目录
+		job.addCacheFile(new URI("hdfs://hadoop-server01:9000/cachefile/b.txt"));
+		
+		//分发一个归档文件到task进程的工作目录
+//		job.addArchiveToClassPath(archive);
+
+		//分发jar包到task节点的classpath下
+//		job.addFileToClassPath(jarfile);
+		
+		job.waitForCompletion(true);
+	}
+}
+```
+
+#### 4.4.3 web日志预处理
+
+1. 需求：
+
+> 对web访问日志中的各字段识别切分
+>
+> 去除日志中不合法的记录
+>
+> 根据KPI统计需求，生成各类访问请求过滤数据
+
+ 
+
+2. 实现代码：
+
+```java
+/**
+*定义一个bean，用来记录日志数据中的各数据字段
+*/
+public class WebLogBean {
+	
+    private String remote_addr;// 记录客户端的ip地址
+    private String remote_user;// 记录客户端用户名称,忽略属性"-"
+    private String time_local;// 记录访问时间与时区
+    private String request;// 记录请求的url与http协议
+    private String status;// 记录请求状态；成功是200
+    private String body_bytes_sent;// 记录发送给客户端文件主体内容大小
+    private String http_referer;// 用来记录从那个页面链接访问过来的
+    private String http_user_agent;// 记录客户浏览器的相关信息
+    private boolean valid = true;// 判断数据是否合法
+    
+	public String getRemote_addr() {
+		return remote_addr;
+	}
+
+	public void setRemote_addr(String remote_addr) {
+		this.remote_addr = remote_addr;
+	}
+
+	public String getRemote_user() {
+		return remote_user;
+	}
+
+	public void setRemote_user(String remote_user) {
+		this.remote_user = remote_user;
+	}
+
+	public String getTime_local() {
+		return time_local;
+	}
+
+	public void setTime_local(String time_local) {
+		this.time_local = time_local;
+	}
+
+	public String getRequest() {
+		return request;
+	}
+
+	public void setRequest(String request) {
+		this.request = request;
+	}
+
+	public String getStatus() {
+		return status;
+	}
+
+	public void setStatus(String status) {
+		this.status = status;
+	}
+
+	public String getBody_bytes_sent() {
+		return body_bytes_sent;
+	}
+
+	public void setBody_bytes_sent(String body_bytes_sent) {
+		this.body_bytes_sent = body_bytes_sent;
+	}
+
+	public String getHttp_referer() {
+		return http_referer;
+	}
+
+	public void setHttp_referer(String http_referer) {
+		this.http_referer = http_referer;
+	}
+
+	public String getHttp_user_agent() {
+		return http_user_agent;
+	}
+
+	public void setHttp_user_agent(String http_user_agent) {
+		this.http_user_agent = http_user_agent;
+	}
+
+	public boolean isValid() {
+		return valid;
+	}
+
+	public void setValid(boolean valid) {
+		this.valid = valid;
+	}
+      
+	@Override
+	public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(this.valid);
+        sb.append("\001").append(this.remote_addr);
+        sb.append("\001").append(this.remote_user);
+        sb.append("\001").append(this.time_local);
+        sb.append("\001").append(this.request);
+        sb.append("\001").append(this.status);
+        sb.append("\001").append(this.body_bytes_sent);
+        sb.append("\001").append(this.http_referer);
+        sb.append("\001").append(this.http_user_agent);
+        return sb.toString();
+	}
+}
+```
+
+```java
+/**
+*定义一个parser用来解析过滤web访问日志原始记录
+*/
+public class WebLogParser {
+    public static WebLogBean parser(String line) {
+        WebLogBean webLogBean = new WebLogBean();
+        String[] arr = line.split(" ");
+        if (arr.length > 11) {
+        	webLogBean.setRemote_addr(arr[0]);
+        	webLogBean.setRemote_user(arr[1]);
+        	webLogBean.setTime_local(arr[3].substring(1));
+        	webLogBean.setRequest(arr[6]);
+        	webLogBean.setStatus(arr[8]);
+        	webLogBean.setBody_bytes_sent(arr[9]);
+        	webLogBean.setHttp_referer(arr[10]);
+            
+            if (arr.length > 12) {
+            	webLogBean.setHttp_user_agent(arr[11] + " " + arr[12]);
+            } else {
+            	webLogBean.setHttp_user_agent(arr[11]);
+            }
+            if (Integer.parseInt(webLogBean.getStatus()) >= 400) {// 大于400，HTTP错误
+            	webLogBean.setValid(false);
+            }
+        } else {
+        	webLogBean.setValid(false);
+        }
+        return webLogBean;
+    }
+   
+    public static String parserTime(String time) {
+    	
+    	time.replace("/", "-");
+    	return time;
+    	
+    }
+}
+```
+
+```java
+/**
+*mapreduce程序
+*/
+public class WeblogPreProcess {
+
+	static class WeblogPreProcessMapper extends Mapper<LongWritable, Text, Text, NullWritable> {
+		Text k = new Text();
+		NullWritable v = NullWritable.get();
+
+		@Override
+		protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+
+			String line = value.toString();
+			WebLogBean webLogBean = WebLogParser.parser(line);
+			if (!webLogBean.isValid())
+				return;
+			k.set(webLogBean.toString());
+			context.write(k, v);
+		}
+	}
+
+	public static void main(String[] args) throws Exception {
+		
+		Configuration conf = new Configuration();
+		Job job = Job.getInstance(conf);
+		
+		job.setJarByClass(WeblogPreProcess.class);
+		
+		job.setMapperClass(WeblogPreProcessMapper.class);
+		
+		job.setOutputKeyClass(Text.class);
+		job.setOutputValueClass(NullWritable.class);
+		
+		FileInputFormat.setInputPaths(job, new Path(args[0]));
+		FileOutputFormat.setOutputPath(job, new Path(args[1]));
+		
+        job.waitForCompletion(true);
+	}
+}
+```
+
