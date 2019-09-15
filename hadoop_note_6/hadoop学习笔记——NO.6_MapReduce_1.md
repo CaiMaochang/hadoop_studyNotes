@@ -1,7 +1,3 @@
----
-
----
-
 ﻿# hadoop学习笔记——NO.6_MapReduce_1
 
 ## 1.MapReduce原理篇（1）
