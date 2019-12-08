@@ -1,6 +1,5 @@
 # hadoop学习笔记——NO.1.1
 
-
 ----------
 
 
@@ -120,7 +119,16 @@ useradd  username #添加用户(要修改密码才能登陆)
 passwd   password #按提示输入密码即可
 ```
 
+#### 改变文件所有者所属组
+
+```shell
+chgrp	用户名	文件名	-R
+
+chown	用户名	文件名	-R
+```
+
 #### 为用户配置sudo权限
+
 ```
 vi /etc/sudoers  #用root编辑 
 ```
